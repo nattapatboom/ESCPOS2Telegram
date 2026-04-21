@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  printer_1:
+    build: .
+    container_name: escpos_printer_1
+    volumes:
+      # แยก Mount point: ให้สร้างโฟลเดอร์ printer_1 แล้วก๊อปไฟล์โค้ดไปไว้ข้างใน
+      - ./printer_1:/app
+    networks:
+      macvlan_net:
+        # ระบุ IP จริงในวงแลน (แก้ไขตามวงแลนของคุณ)
+        ipv4_address: 192.168.1.11
+    restart: unless-stopped
+
+  printer_2:
+    build: .
+    container_name: escpos_printer_2
+    volumes:
+      - ./printer_2:/app
+    networks:
+      macvlan_net:
+        ipv4_address: 192.168.1.12
+    restart: unless-stopped
+
+  printer_3:
+    build: .
+    container_name: escpos_printer_3
+    volumes:
+      - ./printer_3:/app
+    networks:
+      macvlan_net:
+        ipv4_address: 192.168.1.13
+    restart: unless-stopped
+
+  printer_4:
+    build: .
+    container_name: escpos_printer_4
+    volumes:
+      - ./printer_4:/app
+    networks:
+      macvlan_net:
+        ipv4_address: 192.168.1.14
+    restart: unless-stopped
+
+networks:
+  macvlan_net:
+    driver: macvlan
+    driver_opts:
+      # ⚠️ สำคัญมาก: เปลี่ยน eth0 เป็นชื่อการ์ดแลนของคุณ (เช่น eth0, enp3s0, wlan0)
+      parent: eth0
+    ipam:
+      config:
+        # ⚠️ สำคัญมาก: เปลี่ยน Subnet และ Gateway ให้ตรงกับเร้าเตอร์ที่ใช้งาน
+        - subnet: 192.168.1.0/24
+          gateway: 192.168.1.1
