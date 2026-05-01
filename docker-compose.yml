@@ -43,6 +43,30 @@ services:
         ipv4_address: 192.168.1.14
     restart: unless-stopped
 
+  splitter_1:
+    build:
+      context: .
+      dockerfile: Dockerfile.splitter
+    container_name: escpos_splitter_1
+    volumes:
+      - ./splitter_1:/app
+    networks:
+      macvlan_net:
+        ipv4_address: 192.168.1.15
+    restart: unless-stopped
+
+  splitter_2:
+    build:
+      context: .
+      dockerfile: Dockerfile.splitter
+    container_name: escpos_splitter_2
+    volumes:
+      - ./splitter_2:/app
+    networks:
+      macvlan_net:
+        ipv4_address: 192.168.1.16
+    restart: unless-stopped
+
 networks:
   macvlan_net:
     driver: macvlan
