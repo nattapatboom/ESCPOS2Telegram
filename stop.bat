@@ -3,7 +3,7 @@ chcp 65001 >nul
 echo ⏸️ กำลังหยุดการทำงานของระบบชั่วคราว...
 
 :: สั่งหยุดการทำงาน แต่ไม่ลบ Container
-docker-compose stop
+docker compose stop
 
 echo.
 echo ✅ ระบบถูกหยุดการทำงานแล้ว

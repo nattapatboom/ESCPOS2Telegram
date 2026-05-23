@@ -49,7 +49,7 @@ printers:
 The `docker-compose.yml` is pre-configured to run multiple printers and two splitter instances (`splitter_1` and `splitter_2`).
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### 4. Running Locally

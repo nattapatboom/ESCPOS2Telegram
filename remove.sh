@@ -2,7 +2,7 @@
 echo "🗑️ กำลังหยุดและลบระบบทั้งหมด (Container และ Network)..."
 
 # ปิดระบบ ลบ Container ลบ Network แต่ไม่ลบไฟล์โค้ด (Volumes)
-docker-compose down
+docker compose down
 
 echo ""
 echo "✅ ระบบถูกล้างออกเรียบร้อยแล้ว!"
