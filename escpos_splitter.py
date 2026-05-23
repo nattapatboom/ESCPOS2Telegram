@@ -36,15 +36,28 @@ def handle_client(conn, addr, config):
     print(f"\n[{datetime.datetime.now()}] 📥 รับข้อมูลจาก: {addr}")
     full_data = b""
     try:
-        # รับข้อมูลทั้งหมดจนกว่าจะปิดการเชื่อมต่อ
+        # ตั้ง timeout เพื่อตรวจสอบว่าข้อมูลส่งมาครบแล้ว
+        # หาก POS หยุดส่งนาน 1.5 วินาที ถือว่าส่งครบ
+        conn.settimeout(1.5)
         while True:
-            data = conn.recv(8192)
-            if not data:
+            try:
+                data = conn.recv(8192)
+                if not data:
+                    break
+                full_data += data
+            except socket.timeout:
+                # หมดเวลารอ → ข้อมูลน่าจะส่งครบแล้ว
                 break
-            full_data += data
             
         if full_data:
             print(f"📊 ได้รับข้อมูลขนาด {len(full_data)} bytes")
+
+            # ส่งสถานะ "พร้อมพิมพ์" กลับไปหา POS ทันที เพื่อให้ POS รู้ว่าสำเร็จ
+            # DLE EOT (0x10 0x04) = printer status OK
+            try:
+                conn.sendall(b'\x10\x04\x01')  # DLE EOT - Printer Status: OK
+            except Exception:
+                pass
             
             printers = config.get('printers', [])
             if not printers:

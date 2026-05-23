@@ -139,19 +139,29 @@ def handle_client(conn, addr):
     print(f"\n[{datetime.datetime.now()}] 🖨️ ลูกค้าเชื่อมต่อจาก: {addr}")
     full_data = b""
     try:
+        # ตั้ง timeout เพื่อตรวจสอบว่าข้อมูลส่งมาครบแล้ว
+        # หาก POS หยุดส่งนาน 1.5 วินาที ถือว่าส่งครบ
+        conn.settimeout(1.5)
         while True:
-            data = conn.recv(4096)
-            if not data: break
-            full_data += data
+            try:
+                data = conn.recv(4096)
+                if not data:
+                    break
+                full_data += data
+            except socket.timeout:
+                # หมดเวลารอ → ข้อมูลน่าจะส่งครบแล้ว
+                break
             
         if full_data:
             print(f"--- ได้รับข้อมูลทั้งหมด {len(full_data)} bytes ---")
-            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             
-            # บันทึก Raw file (ปัจจุบันถูกปิดการใช้งานไว้)
-            # with open(f"job_{timestamp}.bin", "ab") as f:
-            #     f.write(full_data)
-            
+            # ส่งสถานะ "พร้อมพิมพ์" กลับไปหา POS ทันที เพื่อให้ POS รู้ว่าสำเร็จ
+            # DLE EOT (0x10 0x04) = printer status OK
+            try:
+                conn.sendall(b'\x10\x04\x01')  # DLE EOT - Printer Status: OK
+            except Exception:
+                pass
+
             # ดึงภาพ Raster และส่งเข้า Telegram แทนการบันทึกลงไฟล์
             img = extract_all_raster_images(full_data)
             
@@ -159,13 +169,6 @@ def handle_client(conn, addr):
                 send_to_telegram(img)
             else:
                 print("⚠️ ไม่พบคำสั่งรูปภาพในข้อมูลนี้ (POS อาจส่งมาเป็นข้อความล้วน)")
-                
-            # 2. บันทึกตัววิเคราะห์คำสั่งเก็บไว้ (ปัจจุบันถูกปิดการใช้งานไว้)
-            # analysis_result = analyze_commands(full_data)
-            # txt_filename = f"escpos_analyzer_{timestamp}.txt"
-            # with open(txt_filename, "w", encoding="utf-8") as f:
-            #     f.write(analysis_result)
-            # print(f"📄 บันทึกผลวิเคราะห์คำสั่งลงไฟล์: {txt_filename} เรียบร้อยแล้ว")
                 
     except Exception as e:
         print(f"เกิดข้อผิดพลาด: {e}")
