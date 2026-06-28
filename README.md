@@ -1,3 +1,5 @@
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1S322765N)
+
 # ESCPOS2Telegram
 
 ESCPOS2Telegram is a containerized Python TCP server that emulates an 80mm ESC/POS thermal printer. It captures incoming print data (specifically raster images) over the network and automatically relays the receipts as images directly to a Telegram chat. Additionally, it now includes a **Printer Splitter** utility to forward print jobs to multiple physical or virtual printers.
