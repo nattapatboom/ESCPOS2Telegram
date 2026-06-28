@@ -1,9 +1,10 @@
 #!/bin/bash
-echo "🚀 กำลังเริ่มต้นระบบจำลอง ESC/POS Printer (4 เครื่อง)..."
+echo "🚀 Starting ESC/POS Printer emulator (4 printers)..."
+echo ""
 
-# ใช้ --build เพื่อให้แน่ใจว่าถ้ามีการแก้โค้ด มันจะสร้าง Image ใหม่ให้ด้วย
+# Use --build to ensure code changes rebuild the image
 docker compose up -d --build
 
 echo ""
-echo "✅ ระบบทำงานเรียบร้อยแล้ว!"
-echo "📌 คุณสามารถดู Log สดๆ ได้โดยพิมพ์คำสั่ง: docker compose logs -f"
+echo "✅ System is running!"
+echo "📌 View live logs: docker compose logs -f"

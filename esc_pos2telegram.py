@@ -23,19 +23,19 @@ HOST = '0.0.0.0'
 PORT = 9100
 
 def send_to_telegram(img):
-    """ส่งรูปภาพเข้าแชท Telegram ผ่าน Bot API"""
+    """Send image to Telegram chat via Bot API"""
     if not HAS_REQUESTS:
-        print("❌ ไม่สามารถส่งเข้า Telegram ได้ กรุณาติดตั้ง requests โดยรัน: pip install requests")
+        print("❌ Cannot send to Telegram. Install requests: pip install requests")
         return
         
     if telegram_config.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE" or not telegram_config.BOT_TOKEN:
-        print("⚠️ ไม่สามารถส่งได้: ยังไม่ได้ใส่ BOT_TOKEN ในไฟล์ telegram_config.py")
+        print("⚠️ Cannot send: BOT_TOKEN not set in telegram_config.py")
         return
         
-    print("🚀 กำลังส่งรูปภาพใบเสร็จเข้า Telegram...")
+    print("🚀 Sending receipt image to Telegram...")
     url = f"https://api.telegram.org/bot{telegram_config.BOT_TOKEN}/sendPhoto"
     
-    # ดึงข้อมูลภาพจาก Memory แทนที่จะอ่านจากไฟล์
+    # Read image from memory instead of file
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -48,16 +48,16 @@ def send_to_telegram(img):
             timeout=15
         )
         if response.status_code == 200:
-            print("✅ ส่งรูปภาพเข้า Telegram สำเร็จ!")
+            print("✅ Image sent to Telegram successfully!")
         else:
-            print(f"❌ ส่ง Telegram ล้มเหลว: {response.text}")
+            print(f"❌ Telegram send failed: {response.text}")
     except Exception as e:
-        print(f"เกิดข้อผิดพลาดขณะส่ง Telegram: {e}")
+        print(f"Error sending to Telegram: {e}")
 
 def extract_all_raster_images(data):
-    """ดึงคำสั่งภาพแบบ Raster (GS v 0) ออกมาต่อกันเป็นรูป แล้วส่งกลับเป็น Image Object"""
+    """Extract Raster image commands (GS v 0) and compose into an Image object"""
     if not HAS_PIL:
-        print("❌ ไม่สามารถสร้างรูปภาพได้ กรุณาติดตั้ง Pillow โดยรัน: pip install Pillow")
+        print("❌ Cannot create image. Install Pillow: pip install Pillow")
         return None
         
     idx = 0
@@ -106,8 +106,8 @@ def extract_all_raster_images(data):
     if not images_data:
         return None
         
-    print(f"\n🖼️ ตรวจพบคำสั่งรูปภาพทั้งหมด {len(images_data)} ส่วน (ความกว้าง {max_width}px, ความสูงรวม {total_height}px)")
-    print("⏳ กำลังประมวลผลประกอบรูปภาพ...")
+    print(f"\n🖼️ Found {len(images_data)} image section(s) (width {max_width}px, total height {total_height}px)")
+    print("⏳ Composing image...")
     
     img = Image.new('RGB', (max_width, total_height), color='white')
     draw = ImageDraw.Draw(img)
@@ -136,11 +136,11 @@ def extract_all_raster_images(data):
 from escpos_analyzer import analyze_commands
 
 def handle_client(conn, addr):
-    print(f"\n[{datetime.datetime.now()}] 🖨️ ลูกค้าเชื่อมต่อจาก: {addr}")
+    print(f"\n[{datetime.datetime.now()}] 🖨️ Client connected from: {addr}")
     full_data = b""
     try:
-        # ตั้ง timeout เพื่อตรวจสอบว่าข้อมูลส่งมาครบแล้ว
-        # หาก POS หยุดส่งนาน 1.5 วินาที ถือว่าส่งครบ
+        # Set timeout to detect end of data transmission
+        # If POS stops sending for 1.5 seconds, assume data is complete
         conn.settimeout(1.5)
         while True:
             try:
@@ -149,29 +149,29 @@ def handle_client(conn, addr):
                     break
                 full_data += data
             except socket.timeout:
-                # หมดเวลารอ → ข้อมูลน่าจะส่งครบแล้ว
+                # Timeout reached — data likely complete
                 break
             
         if full_data:
-            print(f"--- ได้รับข้อมูลทั้งหมด {len(full_data)} bytes ---")
+            print(f"--- Received {len(full_data)} bytes total ---")
             
-            # ส่งสถานะ "พร้อมพิมพ์" กลับไปหา POS ทันที เพื่อให้ POS รู้ว่าสำเร็จ
+            # Send "ready to print" status back to POS immediately
             # DLE EOT (0x10 0x04) = printer status OK
             try:
                 conn.sendall(b'\x10\x04\x01')  # DLE EOT - Printer Status: OK
             except Exception:
                 pass
 
-            # ดึงภาพ Raster และส่งเข้า Telegram แทนการบันทึกลงไฟล์
+            # Extract raster image and send to Telegram instead of saving to file
             img = extract_all_raster_images(full_data)
             
             if img:
                 send_to_telegram(img)
             else:
-                print("⚠️ ไม่พบคำสั่งรูปภาพในข้อมูลนี้ (POS อาจส่งมาเป็นข้อความล้วน)")
+                print("⚠️ No image commands found in this data (POS may have sent plain text)")
                 
     except Exception as e:
-        print(f"เกิดข้อผิดพลาด: {e}")
+        print(f"Error: {e}")
     finally:
         conn.close()
 
@@ -182,15 +182,15 @@ def start_printer_server():
         server_socket.listen(5)
         
         print("="*65)
-        print(f"🟢 เริ่มจำลอง ESC/POS Printer ที่พอร์ต {PORT}")
-        print("โหมดการทำงาน: รับภาพใบเสร็จแล้วส่งเข้า Telegram ทันที (ไม่เซฟลงคอม)")
-        print("กด Ctrl+C เพื่อปิดโปรแกรม")
+        print(f"🟢 ESC/POS Printer emulator started on port {PORT}")
+        print("Mode: Receive receipt images and send to Telegram instantly (no local save)")
+        print("Press Ctrl+C to stop")
         print("="*65)
         
         try:
             server_socket.settimeout(1.0)
-            # สร้าง Thread Pool จำกัดจำนวน Worker ไว้ที่ 5 connection พร้อมกัน
-            # หากมีการเชื่อมต่อเข้ามาเกิน 5 เครื่องพร้อมกัน คิวที่ 6 จะถูกพักรอจนกว่าจะว่าง
+            # Create Thread Pool with max 5 concurrent workers
+            # If more than 5 connections arrive, the 6th will wait in queue
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 while True:
                     try:
@@ -199,7 +199,7 @@ def start_printer_server():
                     except socket.timeout:
                         continue
         except KeyboardInterrupt:
-            print("\n🔴 ปิดเครื่องพิมพ์จำลอง (ได้รับคำสั่ง Ctrl+C)...")
+            print("\n🔴 Printer emulator shutting down (Ctrl+C)...")
             sys.exit(0)
 
 if __name__ == "__main__":

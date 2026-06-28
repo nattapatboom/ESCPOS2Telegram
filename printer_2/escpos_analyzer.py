@@ -1,5 +1,5 @@
 def analyze_commands(data):
-    """วิเคราะห์คำสั่ง (แยกจากระบบหลักเพื่อความเป็นระเบียบ)"""
+    """Analyze commands (separated from main system for cleanliness)"""
     i = 0
     lines = []
     text_buffer = bytearray()

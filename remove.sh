@@ -1,9 +1,10 @@
 #!/bin/bash
-echo "🗑️ กำลังหยุดและลบระบบทั้งหมด (Container และ Network)..."
+echo "🗑️ Stopping and removing all containers and networks..."
+echo ""
 
-# ปิดระบบ ลบ Container ลบ Network แต่ไม่ลบไฟล์โค้ด (Volumes)
+# Stop system, remove containers and networks (keeps code and volumes)
 docker compose down
 
 echo ""
-echo "✅ ระบบถูกล้างออกเรียบร้อยแล้ว!"
-echo "📌 (หากต้องการเริ่มระบบใหม่ทั้งหมดตั้งแต่ศูนย์ ให้ใช้คำสั่ง ./start.sh)"
+echo "✅ System cleaned up!"
+echo "📌 Run ./start.sh to start fresh"

@@ -1,9 +1,10 @@
 #!/bin/bash
-echo "⏸️ กำลังหยุดการทำงานของระบบชั่วคราว..."
+echo "⏸️ Stopping the system temporarily..."
+echo ""
 
-# สั่งหยุดการทำงาน แต่ไม่ลบ Container
+# Stop containers without removing them
 docker compose stop
 
 echo ""
-echo "✅ ระบบถูกหยุดการทำงานแล้ว"
-echo "📌 (คุณสามารถใช้คำสั่ง ./start.sh เพื่อให้ระบบกลับมาทำงานต่อโดยใช้ข้อมูลเดิมได้ทันที)"
+echo "✅ System stopped"
+echo "📌 Run ./start.sh to resume with the same data"

@@ -2,11 +2,11 @@
 """
 ESC/POS Printer Splitter
 ━━━━━━━━━━━━━━━━━━━━━━━━
-สถาปัตยกรรม:
-  - แต่ละปริ้นเตอร์มี Queue + Worker Thread เป็นของตัวเอง
-  - Worker ส่งข้อมูลทีละ 1 งาน (ไม่มีการส่งพร้อมกันไปปริ้นเตอร์เดียวกัน)
-  - POS หลายเครื่องส่งมาพร้อมกัน → งานเข้าคิวรอตามลำดับ (FIFO)
-  - ปริ้นเตอร์แต่ละเครื่องทำงานอิสระจากกัน (ไม่บล็อกกัน)
+Architecture:
+  - Each printer has its own Queue + Worker Thread
+  - Worker sends one job at a time (no concurrent sends to the same printer)
+  - Multiple POS clients can send simultaneously — jobs queue up (FIFO)
+  - Each printer runs independently (does not block others)
 """
 import socket
 import threading
@@ -15,18 +15,18 @@ import sys
 import yaml
 import queue
 
-# ─── ชื่อไฟล์คอนฟิกเริ่มต้น ───────────────────────────────────────────────
+# ─── Default config file ───────────────────────────────────────────────
 DEFAULT_CONFIG_FILE = 'splitter_config.yaml'
 
-# ─── ค่าคงที่ความปลอดภัย ───────────────────────────────────────────────────
-MAX_CONCURRENT_CLIENTS = 20   # จำนวน POS ที่รับได้พร้อมกันสูงสุด
-PRINTER_CONNECT_TIMEOUT = 5   # timeout การ connect ไปหาปริ้นเตอร์ (วินาที)
-PRINTER_SEND_TIMEOUT    = 10  # timeout การส่งข้อมูลหลัง connect สำเร็จ (วินาที)
-PRINTER_RETRY           = 2   # จำนวนครั้งที่ลอง retry ถ้าปริ้นเตอร์ไม่ตอบสนอง
-CLIENT_DATA_TIMEOUT     = 1.5 # timeout รอรับข้อมูลจาก POS (วินาที)
-PRINTER_QUEUE_SIZE      = 50  # จำนวน job สูงสุดในคิวต่อปริ้นเตอร์ 1 เครื่อง
+# ─── Safety constants ───────────────────────────────────────────────────
+MAX_CONCURRENT_CLIENTS = 20   # Max simultaneous POS connections
+PRINTER_CONNECT_TIMEOUT = 5   # Printer connect timeout (seconds)
+PRINTER_SEND_TIMEOUT    = 10  # Data send timeout after connect (seconds)
+PRINTER_RETRY           = 2   # Number of retry attempts if printer is unresponsive
+CLIENT_DATA_TIMEOUT     = 1.5 # Timeout waiting for POS data (seconds)
+PRINTER_QUEUE_SIZE      = 50  # Max queued jobs per printer
 
-# ─── State ส่วนกลาง ────────────────────────────────────────────────────────
+# ─── Global state ────────────────────────────────────────────────────────
 _client_semaphore = threading.Semaphore(MAX_CONCURRENT_CLIENTS)
 _active_clients   = 0
 _active_lock      = threading.Lock()
@@ -34,7 +34,7 @@ _active_lock      = threading.Lock()
 
 # ───────────────────────────────────────────────────────────────────────────
 def _log(level: str, msg: str):
-    """พิมพ์ log พร้อม timestamp และ thread name"""
+    """Print log with timestamp and thread name"""
     ts  = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     tid = threading.current_thread().name
     print(f"[{ts}][{tid}] {level} {msg}", flush=True)
@@ -42,20 +42,20 @@ def _log(level: str, msg: str):
 
 # ───────────────────────────────────────────────────────────────────────────
 def load_config(config_path: str = DEFAULT_CONFIG_FILE):
-    """โหลดการตั้งค่าจากไฟล์ YAML"""
+    """Load configuration from YAML file"""
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
     except Exception as e:
-        _log("❌", f"ไม่สามารถโหลดไฟล์คอนฟิกได้: {e}")
+        _log("❌", f"Failed to load config file: {e}")
         return None
 
 
 # ───────────────────────────────────────────────────────────────────────────
 def _send_once(ip: str, port: int, data: bytes, printer_name: str) -> bool:
     """
-    พยายามส่งข้อมูล 1 ครั้ง คืน True ถ้าสำเร็จ
-    แยก timeout ของ connect กับ send ออกจากกัน
+    Attempt to send data once. Returns True on success.
+    Separate timeout for connect vs send.
     """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -67,38 +67,38 @@ def _send_once(ip: str, port: int, data: bytes, printer_name: str) -> bool:
     except socket.timeout as e:
         _log("⏱️", f"{printer_name}: timeout — {e}")
     except ConnectionRefusedError:
-        _log("🔌", f"{printer_name}: ปฏิเสธการเชื่อมต่อ (ปริ้นเตอร์ปิดอยู่?)")
+        _log("🔌", f"{printer_name}: connection refused (printer off?)")
     except OSError as e:
         _log("❌", f"{printer_name}: network error — {e}")
     except Exception as e:
-        _log("❌", f"{printer_name}: ข้อผิดพลาดไม่คาดคิด — {e}")
+        _log("❌", f"{printer_name}: unexpected error — {e}")
     return False
 
 
 def forward_to_printer(ip: str, port: int, data: bytes, printer_name: str) -> bool:
-    """ส่งข้อมูลไปปริ้นเตอร์ พร้อม retry"""
+    """Send data to printer with retry"""
     for attempt in range(1, PRINTER_RETRY + 1):
-        _log("📡", f"[{attempt}/{PRINTER_RETRY}] ส่งไปยัง {printer_name} ({ip}:{port}) ...")
+        _log("📡", f"[{attempt}/{PRINTER_RETRY}] Sending to {printer_name} ({ip}:{port}) ...")
         if _send_once(ip, port, data, printer_name):
-            _log("✅", f"{printer_name}: สำเร็จ ({len(data)} bytes)")
+            _log("✅", f"{printer_name}: success ({len(data)} bytes)")
             return True
         if attempt < PRINTER_RETRY:
-            _log("🔁", f"{printer_name}: รอ 1 วินาที แล้ว retry ...")
-            # รอสั้นๆ ก่อน retry เพื่อให้ปริ้นเตอร์มีเวลาหายใจ
+            _log("🔁", f"{printer_name}: waiting 1s then retry ...")
+            # Brief pause before retry to give printer time to recover
             import time; time.sleep(1)
 
-    _log("🚫", f"{printer_name}: ล้มเหลวทุก {PRINTER_RETRY} ครั้ง — ข้ามงานนี้")
+    _log("🚫", f"{printer_name}: failed after {PRINTER_RETRY} attempts — skipping job")
     return False
 
 
 # ───────────────────────────────────────────────────────────────────────────
 class PrinterQueue:
     """
-    คิวงานส่วนตัวสำหรับปริ้นเตอร์ 1 เครื่อง
+    Per-printer job queue
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    - Worker thread ทำงานในพื้นหลังตลอดเวลาที่โปรแกรมรัน
-    - ดึงงานจากคิวทีละ 1 งาน (FIFO) → ไม่มีการส่งซ้อนกัน
-    - คิวมีขนาดจำกัด (PRINTER_QUEUE_SIZE) ป้องกัน memory ล้น
+    - Worker thread runs in the background for the program's lifetime
+    - Dequeues jobs one at a time (FIFO) — no concurrent sends
+    - Queue has a fixed max size (PRINTER_QUEUE_SIZE) to prevent memory overflow
     """
 
     def __init__(self, ip: str, port: int, name: str):
@@ -112,20 +112,20 @@ class PrinterQueue:
             daemon=True,
         )
         self._thread.start()
-        _log("🖨️", f"Queue worker พร้อมทำงาน: {name} ({ip}:{port})")
+        _log("🖨️", f"Queue worker ready: {name} ({ip}:{port})")
 
     # ── Public ──────────────────────────────────────────────────────────────
     def submit(self, data: bytes) -> bool:
         """
-        เพิ่มงานเข้าคิว (non-blocking)
-        คืน False ถ้าคิวเต็ม → โปรแกรมจะ log แต่ไม่ค้าง
+        Add job to queue (non-blocking)
+        Returns False if queue is full — logs warning but doesn't hang
         """
         try:
             self._q.put_nowait(data)
-            _log("📬", f"{self.name}: รับงานเข้าคิว (รอในคิว: {self._q.qsize()} งาน)")
+            _log("📬", f"{self.name}: job queued (queue: {self._q.qsize()} jobs)")
             return True
         except queue.Full:
-            _log("⚠️", f"{self.name}: คิวเต็ม ({PRINTER_QUEUE_SIZE} งาน) — ทิ้งงานนี้")
+            _log("⚠️", f"{self.name}: queue full ({PRINTER_QUEUE_SIZE} jobs) — dropping job")
             return False
 
     @property
@@ -135,13 +135,13 @@ class PrinterQueue:
     # ── Private ─────────────────────────────────────────────────────────────
     def _worker(self):
         """
-        Loop หลักของ worker:
-        - รอดึงงานจากคิว (บล็อกจนกว่าจะมีงาน)
-        - ส่งข้อมูลทีละ 1 งาน ตามลำดับ FIFO
-        - วนซ้ำตลอดไป (daemon thread จะตายเมื่อโปรแกรมปิด)
+        Worker main loop:
+        - Blocks until a job is available
+        - Sends jobs one at a time, FIFO order
+        - Runs forever (daemon thread dies when program exits)
         """
         while True:
-            data = self._q.get()   # บล็อกจนกว่าจะมีงาน
+            data = self._q.get()   # Blocks until job available
             try:
                 forward_to_printer(self.ip, self.port, data, self.name)
             finally:
@@ -151,14 +151,14 @@ class PrinterQueue:
 # ───────────────────────────────────────────────────────────────────────────
 def handle_client(conn: socket.socket, addr, printer_queues: list):
     """
-    รับข้อมูลจาก POS แล้วใส่คิวของทุกปริ้นเตอร์
-    (ไม่รอให้ปริ้นเตอร์ส่งเสร็จ — คืน connection ให้ POS เร็วที่สุด)
+    Receive data from POS and queue it to all printers
+    (Does not wait for printers to finish — releases POS connection ASAP)
     """
     global _active_clients
 
-    # ── ตรวจสอบ client limit ─────────────────────────────────────────────
+    # ── Check client limit ─────────────────────────────────────────────
     if not _client_semaphore.acquire(blocking=False):
-        _log("⚠️", f"ปฏิเสธ {addr} — เกินจำนวน client สูงสุด ({MAX_CONCURRENT_CLIENTS})")
+        _log("⚠️", f"Rejected {addr} — max clients reached ({MAX_CONCURRENT_CLIENTS})")
         try:
             conn.close()
         except Exception:
@@ -169,11 +169,11 @@ def handle_client(conn: socket.socket, addr, printer_queues: list):
         _active_clients += 1
         current = _active_clients
 
-    _log("📥", f"รับ connection จาก {addr}  (active: {current}/{MAX_CONCURRENT_CLIENTS})")
+    _log("📥", f"Connection from {addr}  (active: {current}/{MAX_CONCURRENT_CLIENTS})")
 
     full_data = b""
     try:
-        # ── รับข้อมูลจาก POS ──────────────────────────────────────────────
+        # ── Receive data from POS ──────────────────────────────────────
         conn.settimeout(CLIENT_DATA_TIMEOUT)
         while True:
             try:
@@ -182,30 +182,30 @@ def handle_client(conn: socket.socket, addr, printer_queues: list):
                     break
                 full_data += chunk
             except socket.timeout:
-                # หมดเวลารอ → ถือว่า POS ส่งข้อมูลครบแล้ว
+                # Timeout reached — assume POS finished sending
                 break
 
         if not full_data:
-            _log("⚠️", f"{addr}: ไม่ได้รับข้อมูลใดเลย")
+            _log("⚠️", f"{addr}: no data received")
             return
 
-        _log("📊", f"{addr}: ได้รับ {len(full_data)} bytes")
+        _log("📊", f"{addr}: received {len(full_data)} bytes")
 
-        # ── ตอบ POS ทันที ──────────────────────────────────────────────────
+        # ── Reply to POS immediately ────────────────────────────────────
         try:
             conn.sendall(b'\x10\x04\x01')  # DLE EOT — Printer Status: OK
         except Exception:
-            pass  # ไม่ critical
+            pass  # Not critical
 
-        # ── ใส่งานเข้าคิวของทุกปริ้นเตอร์ ─────────────────────────────────
+        # ── Queue job to all printers ─────────────────────────────────
         ok = sum(pq.submit(full_data) for pq in printer_queues)
-        _log("📋", f"จัดคิวสำเร็จ {ok}/{len(printer_queues)} เครื่อง")
-        # แสดงสถานะคิวปัจจุบัน
+        _log("📋", f"Queued {ok}/{len(printer_queues)} printers")
+        # Show current queue status
         status = ", ".join(f"{pq.name}({pq.queue_size})" for pq in printer_queues)
-        _log("📊", f"สถานะคิว: {status}")
+        _log("📊", f"Queue status: {status}")
 
     except Exception as e:
-        _log("❌", f"ข้อผิดพลาดในการรับข้อมูลจาก {addr}: {e}")
+        _log("❌", f"Error receiving data from {addr}: {e}")
     finally:
         try:
             conn.close()
@@ -214,7 +214,7 @@ def handle_client(conn: socket.socket, addr, printer_queues: list):
         _client_semaphore.release()
         with _active_lock:
             _active_clients -= 1
-        _log("🔚", f"ปิด connection {addr}")
+        _log("🔚", f"Closed connection {addr}")
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -228,10 +228,10 @@ def start_splitter():
     printers    = config.get('printers', [])
 
     if not printers:
-        _log("❌", "ไม่พบเครื่องพิมพ์ในคอนฟิก")
+        _log("❌", "No printers found in config")
         return
 
-    # ── สร้าง Queue Worker สำหรับแต่ละปริ้นเตอร์ตั้งแต่เริ่ม ────────────
+    # ── Create Queue Workers for each printer upfront ────────────────
     printer_queues = [
         PrinterQueue(
             ip=p.get('ip'),
@@ -246,24 +246,24 @@ def start_splitter():
         try:
             server_socket.bind(('0.0.0.0', listen_port))
         except Exception as e:
-            _log("❌", f"ไม่สามารถ bind พอร์ต {listen_port} ได้: {e}")
+            _log("❌", f"Cannot bind port {listen_port}: {e}")
             return
 
         server_socket.listen(MAX_CONCURRENT_CLIENTS)
 
         print("=" * 65)
-        print("🚀 ESC/POS Printer Splitter เริ่มทำงานแล้ว")
-        print(f"📍 รอรับข้อมูลที่พอร์ต      : {listen_port}")
-        print(f"👥 รับ POS พร้อมกันสูงสุด   : {MAX_CONCURRENT_CLIENTS} เครื่อง")
-        print(f"🖨️  เครื่องพิมพ์ปลายทาง     : {len(printers)} เครื่อง")
+        print("🚀 ESC/POS Printer Splitter started")
+        print(f"📍 Listening on port       : {listen_port}")
+        print(f"👥 Max concurrent POS      : {MAX_CONCURRENT_CLIENTS}")
+        print(f"🖨️  Target printers         : {len(printers)}")
         for p in printers:
             print(f"   - {p.get('name')} ({p.get('ip')}:{p.get('port', 9100)})")
-        print(f"📬 คิวต่อปริ้นเตอร์สูงสุด   : {PRINTER_QUEUE_SIZE} งาน")
-        print(f"⏱️  Connect timeout          : {PRINTER_CONNECT_TIMEOUT}s")
-        print(f"⏱️  Send timeout             : {PRINTER_SEND_TIMEOUT}s")
-        print(f"🔁 Retry ต่อปริ้นเตอร์      : {PRINTER_RETRY} ครั้ง")
+        print(f"📬 Max queue per printer   : {PRINTER_QUEUE_SIZE} jobs")
+        print(f"⏱️  Connect timeout         : {PRINTER_CONNECT_TIMEOUT}s")
+        print(f"⏱️  Send timeout            : {PRINTER_SEND_TIMEOUT}s")
+        print(f"🔁 Retry per printer       : {PRINTER_RETRY} times")
         print("-" * 65)
-        print("กด Ctrl+C เพื่อปิดโปรแกรม")
+        print("Press Ctrl+C to stop")
         print("=" * 65)
 
         try:
@@ -277,7 +277,7 @@ def start_splitter():
                 )
                 t.start()
         except KeyboardInterrupt:
-            _log("🔴", "ปิดโปรแกรม Splitter...")
+            _log("🔴", "Shutting down Splitter...")
             sys.exit(0)
 
 

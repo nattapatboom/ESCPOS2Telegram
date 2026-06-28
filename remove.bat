@@ -1,12 +1,13 @@
 @echo off
 chcp 65001 >nul
-echo 🗑️ กำลังหยุดและลบระบบทั้งหมด (Container และ Network)...
+echo 🗑️ Stopping and removing all containers and networks...
+echo.
 
-:: ปิดระบบ ลบ Container ลบ Network แต่ไม่ลบไฟล์โค้ด (Volumes)
+:: Stop system, remove containers and networks (keeps code and volumes)
 docker compose down
 
 echo.
-echo ✅ ระบบถูกล้างออกเรียบร้อยแล้ว!
-echo 📌 (หากต้องการเริ่มระบบใหม่ทั้งหมดตั้งแต่ศูนย์ ให้ดับเบิ้ลคลิกไฟล์ start.bat)
+echo ✅ System cleaned up!
+echo 📌 Double-click start.bat to start fresh
 echo.
 pause

@@ -1,4 +1,4 @@
-#!/ cures/bin/env python3
+#!/usr/bin/env python3
 import socket
 import threading
 import datetime
@@ -7,37 +7,37 @@ import yaml
 import time
 import concurrent.futures
 
-# ชื่อไฟล์คอนฟิกเริ่มต้น
+# Default config file name
 DEFAULT_CONFIG_FILE = 'splitter_config.yaml'
 
 def load_config(config_path=DEFAULT_CONFIG_FILE):
-    """โหลดการตั้งค่าจากไฟล์ YAML"""
+    """Load configuration from YAML file"""
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
     except Exception as e:
-        print(f"❌ ไม่สามารถโหลดไฟล์คอนฟิกได้: {e}")
+        print(f"❌ Failed to load config file: {e}")
         return None
 
 def forward_to_printer(ip, port, data, printer_name):
-    """ส่งข้อมูลไปยังเครื่องพิมพ์เป้าหมาย"""
+    """Send data to target printer"""
     try:
-        print(f"📡 กำลังส่งข้อมูลไปยัง {printer_name} ({ip}:{port})...")
+        print(f"📡 Sending to {printer_name} ({ip}:{port})...")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(10)  # Timeout 10 วินาที
+            s.settimeout(10)  # 10 second timeout
             s.connect((ip, port))
             s.sendall(data)
-        print(f"✅ ส่งข้อมูลไปยัง {printer_name} สำเร็จ")
+        print(f"✅ Sent to {printer_name} successfully")
     except Exception as e:
-        print(f"❌ ไม่สามารถส่งข้อมูลไปยัง {printer_name} ({ip}) ได้: {e}")
+        print(f"❌ Cannot send to {printer_name} ({ip}): {e}")
 
 def handle_client(conn, addr, config):
-    """รับข้อมูลจาก POS แล้วส่งต่อให้ทุกเครื่องพิมพ์"""
-    print(f"\n[{datetime.datetime.now()}] 📥 รับข้อมูลจาก: {addr}")
+    """Receive data from POS and forward to all printers"""
+    print(f"\n[{datetime.datetime.now()}] 📥 Received from: {addr}")
     full_data = b""
     try:
-        # ตั้ง timeout เพื่อตรวจสอบว่าข้อมูลส่งมาครบแล้ว
-        # หาก POS หยุดส่งนาน 1.5 วินาที ถือว่าส่งครบ
+        # Set timeout to detect end of data transmission
+        # If POS stops sending for 1.5 seconds, assume data is complete
         conn.settimeout(1.5)
         while True:
             try:
@@ -46,13 +46,13 @@ def handle_client(conn, addr, config):
                     break
                 full_data += data
             except socket.timeout:
-                # หมดเวลารอ → ข้อมูลน่าจะส่งครบแล้ว
+                # Timeout reached — data likely complete
                 break
             
         if full_data:
-            print(f"📊 ได้รับข้อมูลขนาด {len(full_data)} bytes")
+            print(f"📊 Received {len(full_data)} bytes")
 
-            # ส่งสถานะ "พร้อมพิมพ์" กลับไปหา POS ทันที เพื่อให้ POS รู้ว่าสำเร็จ
+            # Send "ready to print" status back to POS immediately
             # DLE EOT (0x10 0x04) = printer status OK
             try:
                 conn.sendall(b'\x10\x04\x01')  # DLE EOT - Printer Status: OK
@@ -61,10 +61,10 @@ def handle_client(conn, addr, config):
             
             printers = config.get('printers', [])
             if not printers:
-                print("⚠️ คำเตือน: ไม่พบเครื่องพิมพ์ในคอนฟิก")
+                print("⚠️ Warning: No printers found in config")
                 return
 
-            # ส่งข้อมูลไปยังทุกเครื่องพิมพ์พร้อมกัน (Parallel)
+            # Send to all printers in parallel
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(printers)) as executor:
                 futures = []
                 for p in printers:
@@ -73,16 +73,16 @@ def handle_client(conn, addr, config):
                     name = p.get('name', ip)
                     futures.append(executor.submit(forward_to_printer, ip, port, full_data, name))
                 
-                # รอให้ทุกอย่างเสร็จสิ้น (หรือ timeout)
+                # Wait for all to complete (or timeout)
                 concurrent.futures.wait(futures, timeout=30)
                 
     except Exception as e:
-        print(f"เกิดข้อผิดพลาดในการรับข้อมูล: {e}")
+        print(f"Error receiving data: {e}")
     finally:
         conn.close()
 
 def start_splitter():
-    # รับชื่อไฟล์คอนฟิกจาก argument ถ้ามี
+    # Read config file from argument if provided
     config_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CONFIG_FILE
     config = load_config(config_path)
     if not config:
@@ -96,31 +96,31 @@ def start_splitter():
         try:
             server_socket.bind((host, listen_port))
         except Exception as e:
-            print(f"❌ ไม่สามารถ bind พอร์ต {listen_port} ได้: {e}")
-            print("ตรวจสอบว่ามีโปรแกรมอื่นใช้งานพอร์ตนี้อยู่หรือไม่")
+            print(f"❌ Cannot bind port {listen_port}: {e}")
+            print("Check if another program is using this port")
             return
 
         server_socket.listen(10)
         
         print("="*65)
-        print(f"🚀 ESC/POS Printer Splitter เริ่มทำงานแล้ว")
-        print(f"📍 รอรับข้อมูลที่พอร์ต: {listen_port}")
-        print(f"🖨️ เครื่องพิมพ์ปลายทาง: {len(config.get('printers', []))} เครื่อง")
+        print(f"🚀 ESC/POS Printer Splitter started")
+        print(f"📍 Listening on port: {listen_port}")
+        print(f"🖨️ Target printers: {len(config.get('printers', []))}")
         for p in config.get('printers', []):
             print(f"   - {p.get('name')} ({p.get('ip')}:{p.get('port', 9100)})")
         print("-" * 65)
-        print("กด Ctrl+C เพื่อปิดโปรแกรม")
+        print("Press Ctrl+C to stop")
         print("="*65)
 
         try:
             while True:
                 conn, addr = server_socket.accept()
-                # สร้าง Thread ใหม่เพื่อจัดการแต่ละการเชื่อมต่อที่เข้ามา
+                # Create new thread for each incoming connection
                 client_thread = threading.Thread(target=handle_client, args=(conn, addr, config))
                 client_thread.daemon = True
                 client_thread.start()
         except KeyboardInterrupt:
-            print("\n🔴 ปิดโปรแกรม Splitter...")
+            print("\n🔴 Shutting down Splitter...")
             sys.exit(0)
 
 if __name__ == "__main__":
